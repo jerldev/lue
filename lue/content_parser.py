@@ -584,6 +584,62 @@ def _extract_content_epub(file_path, console):
             pass
         return []
 
+# Multilingual chapter-heading pattern for PDFs. Anchored at the start of the
+# paragraph: a localized chapter keyword followed by an arabic number, a roman
+# numeral, or a Spanish ordinal word, e.g. "Capítulo 1", "CAPÍTULO XII",
+# "Chapitre 2", "Kapitel 5". The strict keyword+number pattern makes word
+# count irrelevant: PDF block extraction merges the heading with the body
+# text that follows it, so heading paragraphs can be long.
+# English "chapter" keeps its original (looser) upstream rule below.
+_PDF_CHAPTER_HEADING_RE = re.compile(
+    r"^\s*(?:cap[íi]tulo|chapitre|kapitel|capitolo)\s+"
+    r"(?:\d+|[ivxlcdm]+|primero|primera|segundo|segunda|tercero|tercera|"
+    r"cuarto|cuarta|quinto|quinta|sexto|sexta|s[ée]ptimo|s[ée]ptima|"
+    r"octavo|octava|noveno|novena|d[ée]cimo|d[ée]cima)\b",
+    re.IGNORECASE,
+)
+
+# Upstream limit for the loose English rule: a heading paragraph is short.
+_PDF_CHAPTER_HEADING_MAX_WORDS = 10
+
+
+def _is_pdf_chapter_heading(paragraph: str) -> bool:
+    """Return True if a (already filtered) PDF paragraph starts a new chapter."""
+    # Upstream rule (English): any "chapter" mention in a short paragraph.
+    if "chapter" in paragraph.lower() and len(paragraph.split()) < _PDF_CHAPTER_HEADING_MAX_WORDS:
+        return True
+    # Multilingual rule: paragraph starts with keyword + number/roman/ordinal.
+    return bool(_PDF_CHAPTER_HEADING_RE.match(paragraph))
+
+
+def _split_pdf_chapters(paragraphs: List[str]) -> List[List[str]]:
+    """Split filtered PDF paragraphs into chapters.
+
+    A chapter-heading paragraph starts a new chapter and becomes its first
+    paragraph. Content before the first heading forms chapter 0. Mirrors the
+    original upstream inline behavior, extended to Spanish and other
+    languages.
+    """
+    chapters: List[List[str]] = []
+    current_chapter: List[str] = []
+
+    for paragraph in paragraphs:
+        if _is_pdf_chapter_heading(paragraph):
+            if current_chapter:
+                chapters.append(current_chapter)
+            current_chapter = [paragraph]
+        else:
+            current_chapter.append(paragraph)
+
+    if current_chapter:
+        chapters.append(current_chapter)
+
+    if not chapters:
+        return [list(paragraphs)]
+
+    return chapters
+
+
 def _extract_content_pdf(file_path, console):
     from . import config
     
@@ -686,31 +742,21 @@ def _extract_content_pdf(file_path, console):
         paragraphs = cleaned_page_text.split('  ')
         
         for para in paragraphs:
-            if len(para.strip()) > 25:
-                cleaned_para = clean_visual_text(para.strip())
+            stripped = para.strip()
+            if len(stripped) > 25:
+                cleaned_para = clean_visual_text(stripped)
                 if cleaned_para and len(cleaned_para) > 10:
+                    all_paragraphs.append(cleaned_para)
+            elif _PDF_CHAPTER_HEADING_RE.match(stripped):
+                # Retain short standalone chapter headings (e.g. "CAPÍTULO 1")
+                # that the length filter would otherwise drop.
+                cleaned_para = clean_visual_text(stripped)
+                if cleaned_para:
                     all_paragraphs.append(cleaned_para)
 
     doc.close() 
     
-    chapters = []
-    current_chapter = []
-    
-    for paragraph in all_paragraphs:
-        if "chapter" in paragraph.lower() and len(paragraph.split()) < 10:
-            if current_chapter:
-                chapters.append(current_chapter)
-            current_chapter = [paragraph]
-        else:
-            current_chapter.append(paragraph)
-            
-    if current_chapter:
-        chapters.append(current_chapter)
-        
-    if not chapters:
-        return [all_paragraphs]
-
-    return chapters
+    return _split_pdf_chapters(all_paragraphs)
 
 def _extract_content_txt(file_path, console):
     try:
