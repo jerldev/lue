@@ -1515,8 +1515,10 @@ class Lue:
                         self.show_search = False
                         self.search_input_mode = False
                         asyncio.create_task(ui.display_ui(self))
-                    continue
-                if cmd in ['prev_sentence', 'prev_paragraph', 'scroll_up', 'scroll_page_up', 'wheel_scroll_up', 'move_to_beginning']:
+                    if cmd != '_resize':
+                        # _resize falls through to the generic handler below.
+                        continue
+                elif cmd in ['prev_sentence', 'prev_paragraph', 'scroll_up', 'scroll_page_up', 'wheel_scroll_up', 'move_to_beginning']:
                     if self.search_selection_idx > 0:
                         self.search_selection_idx -= 1
                     else:
@@ -1537,6 +1539,14 @@ class Lue:
                         c, p, s, _ = self.search_matches[self.search_selection_idx]
                         await self._jump_to_search_match(c, p, s)
                     continue
+                elif cmd == 'search':
+                    self.show_search = False
+                    self.search_input_mode = False
+                    asyncio.create_task(ui.display_ui(self))
+                    continue
+                elif cmd == '_resize':
+                    # Pass through: the generic handler resets the resize latch.
+                    pass
                 elif isinstance(cmd, tuple):
                     pass
                 else:

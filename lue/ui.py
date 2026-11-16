@@ -851,7 +851,7 @@ def render_search_overlay(reader, width, height):
         query_line.append(reader.search_query)
         query_line.append("█", style="blink")
         body = Group(query_line, Text(""))
-        hint = Text("Enter: buscar · Esc: cerrar", style="dim")
+        hint = Text("Enter: buscar · vacío cierra", style="dim")
         inner = Group(body, hint)
 
         panel = Panel(
@@ -916,7 +916,7 @@ def render_note_input_overlay(reader, width, height):
     query_line.append("Nota: ", style="bold cyan")
     query_line.append(reader.note_buffer)
     query_line.append("█", style="blink")
-    hint = Text("Enter: guardar · Esc: cancelar", style="dim")
+    hint = Text("Enter: guardar · vacío descarta", style="dim")
     inner = Group(query_line, Text(""), hint)
 
     panel = Panel(

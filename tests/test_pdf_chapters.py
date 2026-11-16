@@ -18,6 +18,36 @@ LONG_BODY = (
 class TestEnglishBehaviorPreserved:
     """The original upstream rule: 'chapter' (any mention) in a <10-word paragraph."""
 
+    def test_english_rule_equivalent_to_baseline_loop(self):
+        """Drift guard: the helper must stay output-identical to the original
+        upstream inline loop on a mixed corpus."""
+        def baseline(paragraphs):
+            chapters = []
+            current_chapter = []
+            for paragraph in paragraphs:
+                if "chapter" in paragraph.lower() and len(paragraph.split()) < 10:
+                    if current_chapter:
+                        chapters.append(current_chapter)
+                    current_chapter = [paragraph]
+                else:
+                    current_chapter.append(paragraph)
+            if current_chapter:
+                chapters.append(current_chapter)
+            if not chapters:
+                return [list(paragraphs)]
+            return chapters
+
+        corpus = [
+            LONG_BODY,
+            "Chapter 1 The Beginnings of Everything",
+            "this chapter is mentioned mid text",
+            "Chapter",
+            LONG_BODY,
+            "Chapter 2 Next",
+            "",
+        ]
+        assert _split_pdf_chapters(corpus) == baseline(corpus)
+
     def test_english_heading_starts_new_chapter(self):
         paragraphs = [
             LONG_BODY,
@@ -108,6 +138,11 @@ class TestSpanishChapters:
         assert len(chapters) == 3
         assert chapters[1][0].startswith("CAPÍTULO 1")
         assert chapters[2][0].startswith("CAPÍTULO 2")
+
+    def test_multilingual_rule_is_start_anchored(self):
+        assert _is_pdf_chapter_heading("El capítulo 3 dice algo más") is False
+        assert _is_pdf_chapter_heading("Los capítulos anteriores") is False
+        assert _is_pdf_chapter_heading("Capítulo 3 dice algo más") is True
 
     def test_short_standalone_heading_detection(self):
         """Short heading-only blocks must be recognized (they are otherwise

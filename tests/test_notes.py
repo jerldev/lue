@@ -34,6 +34,13 @@ class TestNotesPath:
         assert path.name.endswith(".md")
         assert len(path.stem) > 0
 
+    def test_notes_path_blocks_path_traversal(self, tmp_path):
+        for hostile in ("../evil", "/etc/passwd", "..", "a/b/c"):
+            path = notes.get_notes_path(hostile, documents_dir=tmp_path)
+            resolved = path.resolve()
+            assert resolved.parent == tmp_path.resolve(), f"escaped for {hostile!r}"
+            assert path.name.endswith(".md")
+
 
 class TestNoteTimestamp:
     def test_24h_format(self):
