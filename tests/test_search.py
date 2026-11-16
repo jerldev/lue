@@ -9,7 +9,11 @@ files must register the search command.
 import json
 from pathlib import Path
 
+from rich.console import Console
+
+from lue import ui
 from lue.content_parser import find_search_matches
+from lue.reader import Lue
 
 LUE_DIR = Path(__file__).parent.parent / "lue"
 
@@ -75,3 +79,44 @@ class TestSearchShortcut:
     def test_shortcut_files_stay_valid_json(self):
         for name in ("keys_default.json", "keys_vim.json"):
             assert isinstance(load_shortcuts(name), dict)
+
+
+class SearchResultsStub:
+    """Reader stub in the search results view with a markup-looking query."""
+
+    def __init__(self, query="[/]"):
+        self.search_input_mode = False
+        self.search_query = query
+        self.search_matches = [(0, 0, 0, "párrafo con la búsqueda")]
+        self.search_selection_idx = 0
+        self.search_scroll_offset = 0
+
+
+def render_panel_text(panel):
+    console = Console()
+    with console.capture() as capture:
+        console.print(panel)
+    return capture.get()
+
+
+class TestSearchOverlayTitleIsMarkupSafe:
+    def test_results_title_renders_markup_like_query_literally(self):
+        panel, _, _ = ui.render_search_overlay(SearchResultsStub(), 100, 40)
+        assert "[/]" in render_panel_text(panel)
+
+    def test_zero_matches_title_renders_markup_like_query_literally(self):
+        stub = SearchResultsStub()
+        stub.search_matches = []
+        panel, _, _ = ui.render_search_overlay(stub, 100, 40)
+        assert "[/]" in render_panel_text(panel)
+
+
+class TestEmptySearchSubmitCloses:
+    def test_empty_submit_closes_overlay(self):
+        reader = Lue.__new__(Lue)
+        reader.search_query = "   "
+        reader.show_search = True
+        reader.search_input_mode = True
+        Lue._handle_search_submit(reader)
+        assert reader.show_search is False
+        assert reader.search_input_mode is False

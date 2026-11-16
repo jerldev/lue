@@ -65,6 +65,7 @@ class Lue:
         self.search_scroll_offset = 0
         self.note_input_mode = False
         self.note_buffer = ""
+        self.note_error = ""
         self.chapter_index_panel_x = 0
         self.chapter_index_panel_y = 0
         self.chapter_index_panel_width = 0
@@ -192,6 +193,35 @@ class Lue:
         self.search_selection_idx = 0
         self.search_scroll_offset = 0
         self.search_input_mode = False
+
+    def _handle_search_submit(self):
+        """Handle Enter in the search input: empty closes, otherwise search."""
+        if not self.search_query.strip():
+            # The input hint promises "vacío cierra".
+            self.show_search = False
+            self.search_input_mode = False
+            return
+        self._execute_search()
+
+    def _handle_note_save(self):
+        """Save the note buffer; on write failure keep the text for retry."""
+        note_text = self.note_buffer.strip()
+        if not note_text:
+            # Empty note discards the input, as the hint promises.
+            self.note_input_mode = False
+            self.note_buffer = ""
+            return
+        book_title = os.path.splitext(os.path.basename(self.file_path))[0]
+        position_label = f"cap {self.chapter_idx + 1}, párrafo {self.paragraph_idx + 1}"
+        try:
+            notes.append_note(notes.get_notes_path(book_title), note_text, position_label)
+        except OSError as e:
+            logging.error("Failed to save note: %s", e)
+            self.note_error = "No se pudo guardar la nota (disco o permisos). Enter reintenta."
+            return
+        self.note_input_mode = False
+        self.note_buffer = ""
+        self.note_error = ""
 
     async def _jump_to_search_match(self, chapter_idx, paragraph_idx, sentence_idx):
         """Jump to a search match and close the search overlay."""
@@ -1440,7 +1470,7 @@ class Lue:
                 asyncio.create_task(ui.display_ui(self))
                 continue
             if cmd == 'search_submit':
-                self._execute_search()
+                self._handle_search_submit()
                 asyncio.create_task(ui.display_ui(self))
                 continue
             if cmd == 'search_backspace':
@@ -1473,6 +1503,7 @@ class Lue:
                 # Opening the note input pauses TTS, like the menus do.
                 self.note_input_mode = True
                 self.note_buffer = ""
+                self.note_error = ""
                 if not self.is_paused:
                     self.is_paused = True
                     self._save_extended_progress()
@@ -1483,28 +1514,22 @@ class Lue:
             # Note input commands (typed characters arrive as tuples)
             if isinstance(cmd, tuple) and cmd and cmd[0] == 'note_char':
                 self.note_buffer += cmd[1]
+                self.note_error = ""
                 asyncio.create_task(ui.display_ui(self))
                 continue
             if cmd == 'note_backspace':
                 self.note_buffer = self.note_buffer[:-1]
+                self.note_error = ""
                 asyncio.create_task(ui.display_ui(self))
                 continue
             if cmd == 'note_cancel':
                 self.note_input_mode = False
                 self.note_buffer = ""
+                self.note_error = ""
                 asyncio.create_task(ui.display_ui(self))
                 continue
             if cmd == 'note_save':
-                self.note_input_mode = False
-                note_text = self.note_buffer.strip()
-                self.note_buffer = ""
-                if note_text:
-                    book_title = os.path.splitext(os.path.basename(self.file_path))[0]
-                    position_label = f"cap {self.chapter_idx + 1}, párrafo {self.paragraph_idx + 1}"
-                    try:
-                        notes.append_note(notes.get_notes_path(book_title), note_text, position_label)
-                    except OSError as e:
-                        logging.error("Failed to save note: %s", e)
+                self._handle_note_save()
                 asyncio.create_task(ui.display_ui(self))
                 continue
 

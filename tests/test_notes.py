@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from lue import notes
+from lue.reader import Lue
 
 
 class TestNotesPath:
@@ -90,3 +91,52 @@ class TestNoteShortcut:
 
     def test_vim_layout_registers_note_key(self):
         assert self._shortcuts("keys_vim.json")["display_controls"]["add_note"] == "N"
+
+
+def make_note_reader(tmp_path, buffer="mi nota"):
+    reader = Lue.__new__(Lue)
+    reader.note_input_mode = True
+    reader.note_buffer = buffer
+    reader.note_error = ""
+    reader.file_path = str(tmp_path / "Libro de prueba.pdf")
+    reader.chapter_idx = 1
+    reader.paragraph_idx = 2
+    return reader
+
+
+class TestNoteSaveFailureKeepsText:
+    def test_os_error_keeps_input_open_and_buffer_intact(self, tmp_path, monkeypatch):
+        reader = make_note_reader(tmp_path)
+        monkeypatch.setattr(
+            notes, "get_notes_path", lambda t: tmp_path / "Libro de prueba.md"
+        )
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(notes, "append_note", boom)
+        Lue._handle_note_save(reader)
+        assert reader.note_input_mode is True
+        assert reader.note_buffer == "mi nota"
+        assert reader.note_error
+
+    def test_successful_save_closes_and_clears(self, tmp_path, monkeypatch):
+        reader = make_note_reader(tmp_path)
+        calls = []
+        monkeypatch.setattr(notes, "get_notes_path", lambda t: tmp_path / "out.md")
+        monkeypatch.setattr(notes, "append_note", lambda *a: calls.append(a))
+        Lue._handle_note_save(reader)
+        assert reader.note_input_mode is False
+        assert reader.note_buffer == ""
+        assert reader.note_error == ""
+        assert calls and calls[0][1] == "mi nota"
+        assert calls[0][2] == "cap 2, párrafo 3"
+
+    def test_empty_buffer_discards_without_writing(self, tmp_path, monkeypatch):
+        reader = make_note_reader(tmp_path, buffer="   ")
+        called = []
+        monkeypatch.setattr(notes, "get_notes_path", lambda t: tmp_path / "out.md")
+        monkeypatch.setattr(notes, "append_note", lambda *a: called.append(a))
+        Lue._handle_note_save(reader)
+        assert reader.note_input_mode is False
+        assert called == []

@@ -886,7 +886,9 @@ def render_search_overlay(reader, width, height):
             preview = preview[:57] + "..."
         table.add_row(prefix, f"cap {c + 1}", Text(preview, overflow="ellipsis", no_wrap=True), style=style)
 
-    title = f"[bold cyan]Búsqueda: {reader.search_query.strip()} ({total})[/bold cyan]"
+    title = Text("Búsqueda: ", style="bold cyan")
+    title.append(reader.search_query.strip())
+    title.append(f" ({total})", style="bold cyan")
     panel = Panel(
         table,
         title=title,
@@ -894,7 +896,7 @@ def render_search_overlay(reader, width, height):
         box=box.ROUNDED,
         width=min(80, width - 4),
         height=panel_height,
-        padding=(1, 1) if total else (1, 1),
+        padding=(1, 1),
     )
     if not total:
         panel = Panel(
@@ -917,7 +919,11 @@ def render_note_input_overlay(reader, width, height):
     query_line.append(reader.note_buffer)
     query_line.append("█", style="blink")
     hint = Text("Enter: guardar · vacío descarta", style="dim")
-    inner = Group(query_line, Text(""), hint)
+    # Error line replaces the blank row so the panel keeps its height.
+    blank_row = Text("")
+    if getattr(reader, "note_error", ""):
+        blank_row = Text(reader.note_error, style="bold red")
+    inner = Group(query_line, blank_row, hint)
 
     panel = Panel(
         inner,
