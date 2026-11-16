@@ -56,3 +56,7 @@ WORD_HIGHLIGHT_MODE = 1  # 0=off, 1=normal highlighting, 2=standout highlighting
 # Keyboard settings
 # Can be set to "default", "vim", or a path to a custom keyboard shortcuts JSON file
 CUSTOM_KEYBOARD_SHORTCUTS = "default"
+
+# Notes settings
+# Timestamp format for Markdown notes: "24h" or "12h" (am/pm)
+NOTES_TIME_FORMAT = "24h"

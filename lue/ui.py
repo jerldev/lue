@@ -910,6 +910,26 @@ def render_search_overlay(reader, width, height):
 
     return panel, min(80, width - 4), panel_height
 
+def render_note_input_overlay(reader, width, height):
+    """Render the note capture input box."""
+    query_line = Text()
+    query_line.append("Nota: ", style="bold cyan")
+    query_line.append(reader.note_buffer)
+    query_line.append("█", style="blink")
+    hint = Text("Enter: guardar · Esc: cancelar", style="dim")
+    inner = Group(query_line, Text(""), hint)
+
+    panel = Panel(
+        inner,
+        title="[bold cyan]Nueva nota[/bold cyan]",
+        border_style="magenta",
+        box=box.ROUNDED,
+        width=min(70, width - 4),
+        height=5,
+        padding=(1, 1),
+    )
+    return panel, min(70, width - 4), 5
+
 async def display_ui(reader):
     """Display the UI."""
     if reader.render_lock.locked():
@@ -936,7 +956,9 @@ async def display_ui(reader):
                 # Add search state to trigger updates
                 reader.show_search, reader.search_selection_idx,
                 len(reader.search_matches), len(reader.search_query),
-                reader.search_input_mode
+                reader.search_input_mode,
+                # Add note input state to trigger updates
+                reader.note_input_mode, len(reader.note_buffer)
             )
             
             if reader.last_rendered_state == current_state and reader.last_terminal_size == (width, height):
@@ -1156,6 +1178,25 @@ async def display_ui(reader):
                 for i, line in enumerate(search_lines):
                     if i >= s_panel_height: break
                     overlay += f"\033[{s_start_y + i + 1};{s_start_x + 1}H{line}"
+
+                full_output += overlay
+
+            # Overlay note input if needed
+            if reader.note_input_mode:
+                note_panel, n_panel_width, n_panel_height = render_note_input_overlay(reader, width, height)
+                with temp_console.capture() as capture:
+                    temp_console.print(note_panel, end='', overflow='crop')
+                note_output = capture.get()
+
+                note_lines = note_output.split('\n')
+
+                n_start_y = (height - n_panel_height) // 2
+                n_start_x = (width - n_panel_width) // 2
+
+                overlay = ""
+                for i, line in enumerate(note_lines):
+                    if i >= n_panel_height: break
+                    overlay += f"\033[{n_start_y + i + 1};{n_start_x + 1}H{line}"
 
                 full_output += overlay
 

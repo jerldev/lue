@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.text import Text
 import platformdirs
 
-from . import config, content_parser, progress_manager, audio, ui, input_handler
+from . import config, content_parser, progress_manager, audio, ui, input_handler, notes
 from .tts.base import TTSBase
 
 class Lue:
@@ -63,6 +63,8 @@ class Lue:
         self.search_matches = []
         self.search_selection_idx = 0
         self.search_scroll_offset = 0
+        self.note_input_mode = False
+        self.note_buffer = ""
         self.chapter_index_panel_x = 0
         self.chapter_index_panel_y = 0
         self.chapter_index_panel_width = 0
@@ -1464,6 +1466,45 @@ class Lue:
                     self.search_matches = []
                     self.search_selection_idx = 0
                     self.search_scroll_offset = 0
+                asyncio.create_task(ui.display_ui(self))
+                continue
+
+            if cmd == 'add_note':
+                # Opening the note input pauses TTS, like the menus do.
+                self.note_input_mode = True
+                self.note_buffer = ""
+                if not self.is_paused:
+                    self.is_paused = True
+                    self._save_extended_progress()
+                    await audio.stop_and_clear_audio(self)
+                asyncio.create_task(ui.display_ui(self))
+                continue
+
+            # Note input commands (typed characters arrive as tuples)
+            if isinstance(cmd, tuple) and cmd and cmd[0] == 'note_char':
+                self.note_buffer += cmd[1]
+                asyncio.create_task(ui.display_ui(self))
+                continue
+            if cmd == 'note_backspace':
+                self.note_buffer = self.note_buffer[:-1]
+                asyncio.create_task(ui.display_ui(self))
+                continue
+            if cmd == 'note_cancel':
+                self.note_input_mode = False
+                self.note_buffer = ""
+                asyncio.create_task(ui.display_ui(self))
+                continue
+            if cmd == 'note_save':
+                self.note_input_mode = False
+                note_text = self.note_buffer.strip()
+                self.note_buffer = ""
+                if note_text:
+                    book_title = os.path.splitext(os.path.basename(self.file_path))[0]
+                    position_label = f"cap {self.chapter_idx + 1}, párrafo {self.paragraph_idx + 1}"
+                    try:
+                        notes.append_note(notes.get_notes_path(book_title), note_text, position_label)
+                    except OSError as e:
+                        logging.error("Failed to save note: %s", e)
                 asyncio.create_task(ui.display_ui(self))
                 continue
 

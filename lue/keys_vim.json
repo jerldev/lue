@@ -28,7 +28,8 @@
         "toggle_auto_scroll": "a",
         "cycle_ui_complexity": "v",
         "toggle_chapter_index": "c",
-        "search": "/"
+        "search": "/",
+        "add_note": "N"
     },
     "application": {
         "quit": "q",

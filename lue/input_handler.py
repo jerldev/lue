@@ -73,9 +73,9 @@ def _process_escape_sequence(reader, seq):
     if not seq:
         return
 
-    # While typing a search query, arrow keys (and other escape sequences)
-    # must not navigate the underlying reader.
-    if reader.show_search and reader.search_input_mode:
+    # While typing a note or a search query, arrow keys (and other escape
+    # sequences) must not navigate the underlying reader.
+    if reader.note_input_mode or (reader.show_search and reader.search_input_mode):
         return
 
     last_char = seq[-1]
@@ -152,6 +152,18 @@ def _process_mouse_sequence(reader, sequence):
             pass
 
 
+def _process_note_input_key(reader, data):
+    """Route a keystroke while the note input is active."""
+    if data in ('\r', '\n'):
+        reader.post_command('note_save')
+    elif data == '\x1b':
+        reader.post_command('note_cancel')
+    elif data in ('\x7f', '\b'):
+        reader.post_command('note_backspace')
+    elif len(data) == 1 and (data.isprintable() or data == ' '):
+        reader.post_command(('note_char', data))
+
+
 def _process_search_input_key(reader, data):
     """Route a keystroke while the search query input is active."""
     if data in ('\r', '\n'):
@@ -166,6 +178,11 @@ def _process_search_input_key(reader, data):
 
 def _process_normal_key(reader, data):
     """Process a standard non-escape key press."""
+    # While typing a note, every keystroke is text, not a shortcut.
+    if reader.note_input_mode:
+        _process_note_input_key(reader, data)
+        return
+
     # While typing a search query, every keystroke is text, not a shortcut.
     if reader.show_search and reader.search_input_mode:
         _process_search_input_key(reader, data)
@@ -230,6 +247,8 @@ def _process_normal_key(reader, data):
         cmd = 'toggle_chapter_index'
     elif _matches_shortcut(data, display_shortcuts.get("search", "/")):
         cmd = 'search'
+    elif _matches_shortcut(data, display_shortcuts.get("add_note", "N")):
+        cmd = 'add_note'
 
     if cmd:
         reader.post_command(cmd)
