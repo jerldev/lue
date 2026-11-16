@@ -3,7 +3,7 @@ import os
 import sys
 import platform
 import re
-from rich.console import Console
+from rich.console import Console, Group
 from rich.text import Text
 from rich.panel import Panel
 from rich.table import Table
@@ -843,6 +843,73 @@ def render_chapter_index_overlay(reader, width, height):
 
     return panel, min(60, width - 4), panel_height
 
+def render_search_overlay(reader, width, height):
+    """Render the search overlay: query input or results navigation."""
+    if reader.search_input_mode:
+        query_line = Text()
+        query_line.append("Buscar: ", style="bold cyan")
+        query_line.append(reader.search_query)
+        query_line.append("█", style="blink")
+        body = Group(query_line, Text(""))
+        hint = Text("Enter: buscar · Esc: cerrar", style="dim")
+        inner = Group(body, hint)
+
+        panel = Panel(
+            inner,
+            title="[bold cyan]Búsqueda[/bold cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
+            width=min(60, width - 4),
+            height=5,
+            padding=(1, 1),
+        )
+        return panel, min(60, width - 4), 5
+
+    total = len(reader.search_matches)
+    sel = reader.search_selection_idx
+    scroll_offset = reader.search_scroll_offset
+    panel_height = min(total + 4, height - 4)
+    max_visible = max(1, panel_height - 4)
+
+    table = Table(box=None, show_header=False, padding=0, expand=True)
+    table.add_column("Selection", width=2)
+    table.add_column("Chapter", width=8)
+    table.add_column("Match", ratio=1, no_wrap=True, overflow="ellipsis")
+
+    for i in range(scroll_offset, min(scroll_offset + max_visible, total)):
+        c, p, s, text = reader.search_matches[i]
+        is_selected = i == sel
+        style = "reverse bold cyan" if is_selected else COLORS.TEXT_NORMAL
+        prefix = ">" if is_selected else " "
+        preview = text.strip()
+        if len(preview) > 60:
+            preview = preview[:57] + "..."
+        table.add_row(prefix, f"cap {c + 1}", Text(preview, overflow="ellipsis", no_wrap=True), style=style)
+
+    title = f"[bold cyan]Búsqueda: {reader.search_query.strip()} ({total})[/bold cyan]"
+    panel = Panel(
+        table,
+        title=title,
+        border_style="cyan",
+        box=box.ROUNDED,
+        width=min(80, width - 4),
+        height=panel_height,
+        padding=(1, 1) if total else (1, 1),
+    )
+    if not total:
+        panel = Panel(
+            Text("Sin resultados para la búsqueda.", style="dim"),
+            title=title,
+            border_style="cyan",
+            box=box.ROUNDED,
+            width=min(60, width - 4),
+            height=5,
+            padding=(1, 1),
+        )
+        return panel, min(60, width - 4), 5
+
+    return panel, min(80, width - 4), panel_height
+
 async def display_ui(reader):
     """Display the UI."""
     if reader.render_lock.locked():
@@ -865,7 +932,11 @@ async def display_ui(reader):
                 # Add recent menu state to trigger updates
                 reader.show_recent_menu, reader.recent_menu_selection_idx,
                 # Add chapter index state to trigger updates
-                reader.show_chapter_index, reader.chapter_index_selection_idx
+                reader.show_chapter_index, reader.chapter_index_selection_idx,
+                # Add search state to trigger updates
+                reader.show_search, reader.search_selection_idx,
+                len(reader.search_matches), len(reader.search_query),
+                reader.search_input_mode
             )
             
             if reader.last_rendered_state == current_state and reader.last_terminal_size == (width, height):
@@ -1066,6 +1137,25 @@ async def display_ui(reader):
                 for i, line in enumerate(chapter_lines):
                     if i >= panel_height: break
                     overlay += f"\033[{start_y + i + 1};{start_x + 1}H{line}"
+
+                full_output += overlay
+
+            # Overlay search panel if needed
+            if reader.show_search:
+                search_panel, s_panel_width, s_panel_height = render_search_overlay(reader, width, height)
+                with temp_console.capture() as capture:
+                    temp_console.print(search_panel, end='', overflow='crop')
+                search_output = capture.get()
+
+                search_lines = search_output.split('\n')
+
+                s_start_y = (height - s_panel_height) // 2
+                s_start_x = (width - s_panel_width) // 2
+
+                overlay = ""
+                for i, line in enumerate(search_lines):
+                    if i >= s_panel_height: break
+                    overlay += f"\033[{s_start_y + i + 1};{s_start_x + 1}H{line}"
 
                 full_output += overlay
 

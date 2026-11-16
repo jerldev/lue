@@ -640,6 +640,35 @@ def _split_pdf_chapters(paragraphs: List[str]) -> List[List[str]]:
     return chapters
 
 
+def find_search_matches(chapters, query, limit=500):
+    """Find sentence-level, case-insensitive matches of `query` in a book.
+
+    `chapters` is the parsed structure chapters[chapter][paragraph] = text.
+    Returns a list of (chapter_idx, paragraph_idx, sentence_idx, text)
+    tuples in reading order, capped at `limit` results. An empty or
+    whitespace-only query returns no matches.
+    """
+    if not query or not query.strip():
+        return []
+
+    needle = query.strip().lower()
+    matches = []
+
+    for c, chapter in enumerate(chapters):
+        if not chapter:
+            continue
+        for p, paragraph in enumerate(chapter):
+            if not paragraph:
+                continue
+            for s, sentence in enumerate(split_into_sentences(paragraph)):
+                if needle in sentence.lower():
+                    matches.append((c, p, s, sentence))
+                    if len(matches) >= limit:
+                        return matches
+
+    return matches
+
+
 def _extract_content_pdf(file_path, console):
     from . import config
     

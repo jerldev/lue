@@ -57,6 +57,12 @@ class Lue:
         self.show_chapter_index = False
         self.chapter_index_selection_idx = 0
         self.chapter_index_scroll_offset = 0
+        self.show_search = False
+        self.search_input_mode = False
+        self.search_query = ""
+        self.search_matches = []
+        self.search_selection_idx = 0
+        self.search_scroll_offset = 0
         self.chapter_index_panel_x = 0
         self.chapter_index_panel_y = 0
         self.chapter_index_panel_width = 0
@@ -157,6 +163,51 @@ class Lue:
             if para.strip() and len(para.strip()) > 3:
                 return i
         return 0
+
+    def _update_search_scroll(self):
+        """Keep the search results scroll window aligned with the selection."""
+        total = len(self.search_matches)
+        _, height = ui.get_terminal_size()
+        panel_height = min(total + 4, height - 4)
+        max_visible = max(1, panel_height - 4)
+        offset = self.search_scroll_offset
+        if offset > total - max_visible:
+            offset = max(0, total - max_visible)
+        if offset < 0:
+            offset = 0
+        sel = self.search_selection_idx
+        if sel < offset:
+            offset = sel
+        if sel >= offset + max_visible:
+            offset = max(0, sel - max_visible + 1)
+        self.search_scroll_offset = offset
+
+    def _execute_search(self):
+        """Run the current search query and switch to results navigation."""
+        self.search_matches = content_parser.find_search_matches(
+            self.chapters, self.search_query
+        )
+        self.search_selection_idx = 0
+        self.search_scroll_offset = 0
+        self.search_input_mode = False
+
+    async def _jump_to_search_match(self, chapter_idx, paragraph_idx, sentence_idx):
+        """Jump to a search match and close the search overlay."""
+        if not 0 <= chapter_idx < len(self.chapters):
+            return
+        self.show_search = False
+        self.search_input_mode = False
+        self.chapter_idx = self.ui_chapter_idx = chapter_idx
+        self.paragraph_idx = self.ui_paragraph_idx = paragraph_idx
+        self.sentence_idx = self.ui_sentence_idx = sentence_idx
+        self.first_sentence_jump = False
+        self._scroll_to_position_immediate(chapter_idx, paragraph_idx, sentence_idx)
+        self._save_extended_progress(sync_audio_position=True)
+        if not self.is_paused and self.tts_model:
+            self.pending_restart_task = asyncio.create_task(self._restart_audio_after_navigation())
+        else:
+            await audio.stop_and_clear_audio(self)
+        asyncio.create_task(ui.display_ui(self))
 
     async def _jump_to_chapter(self, chapter_idx):
         """Jump to a specific chapter by index."""
@@ -1307,6 +1358,7 @@ class Lue:
                 self.show_recent_menu = not self.show_recent_menu
                 if self.show_recent_menu:
                     self.show_chapter_index = False
+                    self.show_search = False
                     self.recent_books_list = progress_manager.get_recent_books()
                     self.recent_menu_selection_idx = 0
                     # Pause TTS when menu opens
@@ -1324,6 +1376,7 @@ class Lue:
                 self.show_chapter_index = not self.show_chapter_index
                 if self.show_chapter_index:
                     self.show_recent_menu = False
+                    self.show_search = False
                     self.chapter_index_selection_idx = self.chapter_idx
                     self._update_chapter_index_scroll()
                     if not self.is_paused:
@@ -1374,6 +1427,75 @@ class Lue:
                     pass
                 elif cmd == '_resize':
                     pass
+                elif isinstance(cmd, tuple):
+                    pass
+                else:
+                    continue
+
+            # Search overlay commands (typed characters arrive as tuples)
+            if isinstance(cmd, tuple) and cmd and cmd[0] == 'search_char':
+                self.search_query += cmd[1]
+                asyncio.create_task(ui.display_ui(self))
+                continue
+            if cmd == 'search_submit':
+                self._execute_search()
+                asyncio.create_task(ui.display_ui(self))
+                continue
+            if cmd == 'search_backspace':
+                self.search_query = self.search_query[:-1]
+                asyncio.create_task(ui.display_ui(self))
+                continue
+            if cmd == 'search_cancel':
+                self.show_search = False
+                self.search_input_mode = False
+                asyncio.create_task(ui.display_ui(self))
+                continue
+
+            if cmd == 'search':
+                # Search is only available while TTS is paused (user spec).
+                if not self.is_paused:
+                    continue
+                self.show_search = not self.show_search
+                if self.show_search:
+                    self.show_chapter_index = False
+                    self.show_recent_menu = False
+                    self.search_input_mode = True
+                    self.search_query = ""
+                    self.search_matches = []
+                    self.search_selection_idx = 0
+                    self.search_scroll_offset = 0
+                asyncio.create_task(ui.display_ui(self))
+                continue
+
+            if self.show_search:
+                if not self.search_matches:
+                    # Nothing to navigate; only closing keys matter.
+                    if cmd == 'search':
+                        self.show_search = False
+                        self.search_input_mode = False
+                        asyncio.create_task(ui.display_ui(self))
+                    continue
+                if cmd in ['prev_sentence', 'prev_paragraph', 'scroll_up', 'scroll_page_up', 'wheel_scroll_up', 'move_to_beginning']:
+                    if self.search_selection_idx > 0:
+                        self.search_selection_idx -= 1
+                    else:
+                        self.search_selection_idx = len(self.search_matches) - 1
+                    self._update_search_scroll()
+                    asyncio.create_task(ui.display_ui(self))
+                    continue
+                elif cmd in ['next_sentence', 'next_paragraph', 'scroll_down', 'scroll_page_down', 'wheel_scroll_down', 'move_to_end']:
+                    if self.search_selection_idx < len(self.search_matches) - 1:
+                        self.search_selection_idx += 1
+                    else:
+                        self.search_selection_idx = 0
+                    self._update_search_scroll()
+                    asyncio.create_task(ui.display_ui(self))
+                    continue
+                elif cmd == 'select_menu_item':
+                    if 0 <= self.search_selection_idx < len(self.search_matches):
+                        c, p, s, _ = self.search_matches[self.search_selection_idx]
+                        await self._jump_to_search_match(c, p, s)
+                    continue
                 elif isinstance(cmd, tuple):
                     pass
                 else:

@@ -73,16 +73,21 @@ def _process_escape_sequence(reader, seq):
     if not seq:
         return
 
+    # While typing a search query, arrow keys (and other escape sequences)
+    # must not navigate the underlying reader.
+    if reader.show_search and reader.search_input_mode:
+        return
+
     last_char = seq[-1]
     cmd = None
 
     if last_char == 'A':
-        cmd = 'scroll_up' if (reader.show_recent_menu or reader.show_chapter_index) else 'prev_paragraph'
+        cmd = 'scroll_up' if (reader.show_recent_menu or reader.show_chapter_index or reader.show_search) else 'prev_paragraph'
     elif last_char == 'B':
-        cmd = 'scroll_down' if (reader.show_recent_menu or reader.show_chapter_index) else 'next_paragraph'
-    elif last_char == 'C' and not (reader.show_recent_menu or reader.show_chapter_index):
+        cmd = 'scroll_down' if (reader.show_recent_menu or reader.show_chapter_index or reader.show_search) else 'next_paragraph'
+    elif last_char == 'C' and not (reader.show_recent_menu or reader.show_chapter_index or reader.show_search):
         cmd = 'next_sentence'
-    elif last_char == 'D' and not (reader.show_recent_menu or reader.show_chapter_index):
+    elif last_char == 'D' and not (reader.show_recent_menu or reader.show_chapter_index or reader.show_search):
         cmd = 'prev_sentence'
     elif seq == '\x1b[5~':
         cmd = 'scroll_page_up'
@@ -147,8 +152,25 @@ def _process_mouse_sequence(reader, sequence):
             pass
 
 
+def _process_search_input_key(reader, data):
+    """Route a keystroke while the search query input is active."""
+    if data in ('\r', '\n'):
+        reader.post_command('search_submit')
+    elif data == '\x1b':
+        reader.post_command('search_cancel')
+    elif data in ('\x7f', '\b'):
+        reader.post_command('search_backspace')
+    elif len(data) == 1 and (data.isprintable() or data == ' '):
+        reader.post_command(('search_char', data))
+
+
 def _process_normal_key(reader, data):
     """Process a standard non-escape key press."""
+    # While typing a search query, every keystroke is text, not a shortcut.
+    if reader.show_search and reader.search_input_mode:
+        _process_search_input_key(reader, data)
+        return
+
     nav_shortcuts = KEYBOARD_SHORTCUTS.get("navigation", {})
     tts_shortcuts = KEYBOARD_SHORTCUTS.get("tts_controls", {})
     display_shortcuts = KEYBOARD_SHORTCUTS.get("display_controls", {})
@@ -206,6 +228,8 @@ def _process_normal_key(reader, data):
         cmd = 'cycle_ui_complexity'
     elif _matches_shortcut(data, display_shortcuts.get("toggle_chapter_index", "c")):
         cmd = 'toggle_chapter_index'
+    elif _matches_shortcut(data, display_shortcuts.get("search", "/")):
+        cmd = 'search'
 
     if cmd:
         reader.post_command(cmd)
