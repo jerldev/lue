@@ -48,6 +48,22 @@ def load_bookmarks(book_title: str, documents_dir=None) -> list:
         return []
 
 
+def remove_bookmark(book_title: str, bookmark_id: int, documents_dir=None) -> bool:
+    """Delete a bookmark by id; False when the id does not exist."""
+    entries = load_bookmarks(book_title, documents_dir)
+    remaining = [e for e in entries if e.get("id") != bookmark_id]
+    if len(remaining) == len(entries):
+        return False
+    path = get_bookmarks_path(book_title, documents_dir)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(remaining, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        logging.warning(f"Could not remove bookmark for '{book_title}': {e}")
+        raise
+    return True
+
+
 def add_bookmark(book_title: str, chapter_idx: int, paragraph_idx: int,
                  sentence_idx: int, documents_dir=None) -> dict:
     """Append a bookmark at the given position and persist the file."""

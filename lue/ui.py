@@ -881,7 +881,7 @@ def render_bookmarks_overlay(reader, width, height):
     panel = Panel(
         table,
         title="[bold cyan]Marcas[/bold cyan]",
-        subtitle=f"{total} marcas · Enter salta · f cierra",
+        subtitle=f"{total} marcas · Enter salta · x elimina · f cierra",
         border_style="cyan",
         box=box.ROUNDED,
         width=min(60, width - 4),

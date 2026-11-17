@@ -1003,6 +1003,21 @@ class Lue:
         )
         self._set_status(f'✓ Marca {entry["id"]} guardada')
 
+    async def _handle_bookmark_delete(self):
+        """Delete the selected bookmark (only meaningful with the menu open)."""
+        if not self.show_bookmark_menu or not self.bookmarks:
+            return
+        entry = self.bookmarks[self.bookmark_menu_selection_idx]
+        if bookmarks.remove_bookmark(self.book_title, entry.get("id")):
+            self._set_status(f'✓ Marca {entry.get("id")} eliminada')
+        else:
+            self._set_status('✗ No se pudo eliminar la marca')
+        self.bookmarks = bookmarks.load_bookmarks(self.book_title)
+        total = len(self.bookmarks)
+        self.bookmark_menu_selection_idx = min(self.bookmark_menu_selection_idx, total - 1) if total else 0
+        self.bookmark_menu_scroll_offset = min(self.bookmark_menu_scroll_offset, max(0, total - 1))
+        asyncio.create_task(ui.display_ui(self))
+
     async def _handle_toggle_bookmark_menu(self):
         """Open/close the bookmark list; pause audio while it is open."""
         self.show_bookmark_menu = not self.show_bookmark_menu
@@ -1763,6 +1778,10 @@ class Lue:
 
             if cmd == 'toggle_bookmark_menu':
                 await self._handle_toggle_bookmark_menu()
+                continue
+
+            if cmd == 'delete_bookmark':
+                await self._handle_bookmark_delete()
                 continue
 
             if self.show_chapter_index:

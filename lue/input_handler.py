@@ -212,6 +212,9 @@ def _process_normal_key(reader, data):
     cmd = None
     if _matches_shortcut(data, app_shortcuts.get("toggle_recent_menu", "r")):
         cmd = 'toggle_recent_menu'
+    elif reader.show_bookmark_menu and data == 'x':
+        # Inside the bookmark list, x deletes the selected mark.
+        cmd = 'delete_bookmark'
     elif _matches_shortcut(data, app_shortcuts.get("select_menu_item", "\n")) or data == '\r':
         cmd = 'select_menu_item'
     elif _matches_shortcut(data, tts_shortcuts.get("play_pause", "p")):

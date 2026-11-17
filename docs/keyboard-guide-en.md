@@ -41,7 +41,7 @@ at the end.
 | `N` | Write a note (saved to `~/Documents/<book>.md`; `Enter` saves, `Esc` cancels) |
 | `o` | Voices: pick language and voice (Enter applies and keeps reading with the new voice) |
 | `d` | **Drop a bookmark** at the current position (save point, with on-screen confirmation) |
-| `f` | **Saved bookmarks**: window listing every mark; `Enter` jumps to it |
+| `f` | **Saved bookmarks**: window listing every mark; `Enter` jumps to it, `x` deletes |
 | `a` | Auto-scroll on/off |
 | `v` | Cycle UI complexity (simple ↔ full) |
 | `r` | Recent books menu |
@@ -53,8 +53,8 @@ at the end.
 - **`d`** saves a bookmark at the exact chapter/paragraph/sentence you are
   reading, timestamped. A "✓ Marca N guardada" message confirms it.
 - **`f`** opens the book's bookmark list: move with arrows or `j`/`k`
-  (wraps around), `Enter` jumps to the mark and closes, `f` closes without
-  jumping.
+  (wraps around), `Enter` jumps to the mark and closes, **`x`** deletes
+  the selected mark, `f` closes without jumping.
 - Bookmarks are stored in `~/Documents/LUE/<book>.bookmarks.json` (one file
   per book). The `LUE` folder is created automatically on first use.
 - Bookmarks coexist with notes (`N`, in `~/Documents/<book>.md`) and with

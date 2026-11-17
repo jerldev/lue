@@ -129,6 +129,18 @@ class TestBookmarksModule:
         assert len(bookmarks.load_bookmarks("Libro A")) == 1
         assert len(bookmarks.load_bookmarks("Libro B")) == 1
 
+    def test_remove_bookmark_deletes_and_persists(self, docs):
+        bookmarks.add_bookmark("Mi Libro", 0, 0, 0)
+        bookmarks.add_bookmark("Mi Libro", 1, 1, 1)
+        assert bookmarks.remove_bookmark("Mi Libro", 1) is True
+        remaining = bookmarks.load_bookmarks("Mi Libro")
+        assert [e["id"] for e in remaining] == [2]
+
+    def test_remove_missing_bookmark_is_noop(self, docs):
+        bookmarks.add_bookmark("Mi Libro", 0, 0, 0)
+        assert bookmarks.remove_bookmark("Mi Libro", 99) is False
+        assert len(bookmarks.load_bookmarks("Mi Libro")) == 1
+
 
 class TestAddBookmarkHandler:
     def test_add_saves_current_position_and_status(self, docs, display_calls):
@@ -202,6 +214,63 @@ class TestBookmarkMenu:
             assert reader.show_bookmark_menu is False
 
         asyncio.run(scenario())
+
+    def test_delete_selected_refreshes_and_clamps(self, docs, display_calls):
+        reader = make_reader(docs.parent)
+        reader.show_bookmark_menu = True
+        reader.bookmarks = [
+            {"id": 1, "c": 0, "p": 0, "s": 0, "timestamp": "t1"},
+            {"id": 2, "c": 1, "p": 0, "s": 0, "timestamp": "t2"},
+        ]
+        bookmarks.add_bookmark("Mi Libro", 0, 0, 0)
+        bookmarks.add_bookmark("Mi Libro", 1, 0, 0)
+        reader.bookmark_menu_selection_idx = 1
+
+        async def scenario():
+            await reader._handle_bookmark_delete()
+
+        asyncio.run(scenario())
+        assert [e["id"] for e in bookmarks.load_bookmarks("Mi Libro")] == [1]
+        assert [e["id"] for e in reader.bookmarks] == [1]
+        assert reader.bookmark_menu_selection_idx == 0
+        assert "eliminada" in reader.status_message
+
+    def test_delete_requires_open_menu(self, docs, display_calls):
+        reader = make_reader(docs.parent)  # menu closed
+        bookmarks.add_bookmark("Mi Libro", 0, 0, 0)
+
+        async def scenario():
+            await reader._handle_bookmark_delete()
+
+        asyncio.run(scenario())
+        assert len(bookmarks.load_bookmarks("Mi Libro")) == 1
+
+    def test_x_key_routes_to_delete_only_inside_menu(self):
+        class Stub:
+            note_input_mode = False
+            show_search = False
+            search_input_mode = False
+            show_recent_menu = False
+            show_chapter_index = False
+            show_voice_menu = False
+            show_bookmark_menu = False
+
+            def __init__(self):
+                self.commands = []
+
+            def post_command(self, cmd):
+                self.commands.append(cmd)
+
+        from lue import input_handler
+
+        stub = Stub()
+        stub.show_bookmark_menu = True
+        input_handler._process_normal_key(stub, "x")
+        assert stub.commands == ["delete_bookmark"]
+
+        stub2 = Stub()  # menu closed: x keeps its global meaning
+        input_handler._process_normal_key(stub2, "x")
+        assert stub2.commands == ["next_chapter"]
 
 
 class TestJumpToBookmark:

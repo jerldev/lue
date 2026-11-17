@@ -40,7 +40,7 @@ Si usás el perfil **vim** (`keys_vim.json`), las diferencias están al final.
 | `N` | Escribir una nota (se guarda en `~/Documentos/<libro>.md`; `Enter` guarda, `Esc` cancela) |
 | `o` | Voces: elegir idioma y voz (Enter aplica y sigue leyendo con la nueva voz) |
 | `d` | **Dejar una marca** en la posición actual (punto de salvado, con confirmación en pantalla) |
-| `f` | **Marcas guardadas**: ventana con todos los puntos; `Enter` salta a la marca |
+| `f` | **Marcas guardadas**: ventana con todos los puntos; `Enter` salta a la marca, `x` elimina |
 | `a` | Auto-scroll on/off |
 | `v` | Cambiar el modo de interfaz (sencilla ↔ completa) |
 | `r` | Menú de libros recientes |
@@ -52,7 +52,8 @@ Si usás el perfil **vim** (`keys_vim.json`), las diferencias están al final.
 - **`d`** guarda una marca en el capítulo/párrafo/frase exacto donde estás
   leyendo, con fecha y hora. Aparece un "✓ Marca N guardada".
 - **`f`** abre la lista de marcas del libro: movete con flechas o `j`/`k`
-  (con envoltura), `Enter` salta a la marca y cierra, `f` cierra sin saltar.
+  (con envoltura), `Enter` salta a la marca y cierra, **`x`** elimina la
+  marca seleccionada, `f` cierra sin saltar.
 - Se guardan en `~/Documentos/LUE/<libro>.bookmarks.json` (una por libro).
   La carpeta `LUE` se crea sola la primera vez.
 - Las marcas conviven con las notas (`N`, en `~/Documentos/<libro>.md`) y el
