@@ -844,6 +844,52 @@ def render_chapter_index_overlay(reader, width, height):
 
     return panel, min(60, width - 4), panel_height
 
+def render_bookmarks_overlay(reader, width, height):
+    """Render the bookmark list overlay: saved reading positions."""
+    entries = reader.bookmarks
+    total = len(entries)
+
+    if not total:
+        panel = Panel(
+            Text("Sin marcas todavía ( d deja una )", style="cyan"),
+            title="[bold cyan]Marcas[/bold cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
+            width=min(60, width - 4),
+            padding=(1, 2)
+        )
+        return panel, min(60, width - 4), 5
+
+    sel = reader.bookmark_menu_selection_idx
+    scroll_offset = reader.bookmark_menu_scroll_offset
+    panel_height = min(total + 4, height - 4)
+    max_visible = max(1, panel_height - 4)
+
+    table = Table(box=None, show_header=False, padding=0, expand=True)
+    table.add_column("Selection", width=2)
+    table.add_column("Entry", ratio=1, no_wrap=True, overflow="ellipsis")
+
+    for i in range(scroll_offset, min(scroll_offset + max_visible, total)):
+        entry = entries[i]
+        is_selected = i == sel
+        style = "reverse bold cyan" if is_selected else COLORS.TEXT_NORMAL
+        prefix = ">" if is_selected else " "
+        row_text = f"Cap {entry['c'] + 1} · párrafo {entry['p'] + 1} · {entry['timestamp']}"
+
+        table.add_row(prefix, Text(row_text, overflow="ellipsis", no_wrap=True), style=style)
+
+    panel = Panel(
+        table,
+        title="[bold cyan]Marcas[/bold cyan]",
+        subtitle=f"{total} marcas · Enter salta · f cierra",
+        border_style="cyan",
+        box=box.ROUNDED,
+        width=min(60, width - 4),
+        height=panel_height,
+        padding=(1, 1)
+    )
+    return panel, min(60, width - 4), panel_height
+
 def render_voice_menu_overlay(reader, width, height):
     """Render the voice picker overlay: language list or voice list."""
     if reader.voice_menu_loading:
@@ -1037,6 +1083,9 @@ async def display_ui(reader):
                 reader.show_voice_menu, reader.voice_menu_level,
                 reader.voice_menu_selection_idx, len(reader.voice_menu_voices),
                 reader.voice_menu_loading, reader.voice_menu_error,
+                # Bookmark menu state
+                reader.show_bookmark_menu, reader.bookmark_menu_selection_idx,
+                len(reader.bookmarks),
                 # Transient status message (copy feedback, etc.)
                 reader.status_message if time.monotonic() < reader.status_message_until else '',
             )
@@ -1258,6 +1307,25 @@ async def display_ui(reader):
                 for i, line in enumerate(voice_lines):
                     if i >= v_panel_height: break
                     overlay += f"\033[{v_start_y + i + 1};{v_start_x + 1}H{line}"
+
+                full_output += overlay
+
+            # Overlay bookmark list if needed
+            if reader.show_bookmark_menu:
+                b_panel, b_panel_width, b_panel_height = render_bookmarks_overlay(reader, width, height)
+                with temp_console.capture() as capture:
+                    temp_console.print(b_panel, end='', overflow='crop')
+                bookmark_output = capture.get()
+
+                bookmark_lines = bookmark_output.split('\n')
+
+                b_start_y = (height - b_panel_height) // 2
+                b_start_x = (width - b_panel_width) // 2
+
+                overlay = ""
+                for i, line in enumerate(bookmark_lines):
+                    if i >= b_panel_height: break
+                    overlay += f"\033[{b_start_y + i + 1};{b_start_x + 1}H{line}"
 
                 full_output += overlay
 

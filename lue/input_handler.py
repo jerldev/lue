@@ -262,6 +262,10 @@ def _process_normal_key(reader, data):
         cmd = 'add_note'
     elif _matches_shortcut(data, display_shortcuts.get("toggle_voice_menu", "o")):
         cmd = 'toggle_voice_menu'
+    elif _matches_shortcut(data, display_shortcuts.get("add_bookmark", "d")):
+        cmd = 'add_bookmark'
+    elif _matches_shortcut(data, display_shortcuts.get("toggle_bookmark_menu", "f")):
+        cmd = 'toggle_bookmark_menu'
 
     if cmd:
         reader.post_command(cmd)

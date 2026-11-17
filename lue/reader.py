@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.text import Text
 import platformdirs
 
-from . import config, content_parser, progress_manager, audio, ui, input_handler, notes
+from . import config, content_parser, progress_manager, audio, ui, input_handler, notes, bookmarks
 from .tts.base import TTSBase
 
 class Lue:
@@ -338,6 +338,11 @@ class Lue:
         self.voice_menu_error = ''
         self.voice_menu_was_playing = False
         self._voice_menu_catalog = {}
+        # Bookmark (save point) state
+        self.show_bookmark_menu = False
+        self.bookmark_menu_selection_idx = 0
+        self.bookmark_menu_scroll_offset = 0
+        self.bookmarks = []
         
         # Rendering state
         self.last_rendered_state = None
@@ -990,6 +995,96 @@ class Lue:
         if self.voice_menu_was_playing and self.is_paused:
             self.is_paused = False
             await self._restart_audio_after_navigation()
+
+    async def _handle_add_bookmark(self):
+        """Save a bookmark at the current reading position."""
+        entry = bookmarks.add_bookmark(
+            self.book_title, self.chapter_idx, self.paragraph_idx, self.sentence_idx
+        )
+        self._set_status(f'✓ Marca {entry["id"]} guardada')
+
+    async def _handle_toggle_bookmark_menu(self):
+        """Open/close the bookmark list; pause audio while it is open."""
+        self.show_bookmark_menu = not self.show_bookmark_menu
+        if self.show_bookmark_menu:
+            self.show_recent_menu = False
+            self.show_chapter_index = False
+            self.show_search = False
+            self.show_voice_menu = False
+            self.bookmark_menu_selection_idx = 0
+            self.bookmark_menu_scroll_offset = 0
+            self.bookmarks = bookmarks.load_bookmarks(self.book_title)
+            if not self.is_paused:
+                self.is_paused = True
+                self._save_extended_progress()
+                await audio.stop_and_clear_audio(self)
+        asyncio.create_task(ui.display_ui(self))
+
+    async def _handle_bookmark_menu_command(self, cmd):
+        """Consume a command while the bookmark menu is open; False = not consumed."""
+        if not self.show_bookmark_menu:
+            return False
+        total = len(self.bookmarks)
+        nav_up = cmd in ['prev_sentence', 'prev_paragraph', 'scroll_up', 'scroll_page_up', 'wheel_scroll_up', 'move_to_beginning']
+        nav_down = cmd in ['next_sentence', 'next_paragraph', 'scroll_down', 'scroll_page_down', 'wheel_scroll_down', 'move_to_end']
+        if nav_up and total:
+            self.bookmark_menu_selection_idx = (self.bookmark_menu_selection_idx - 1) % total
+            self._update_bookmark_menu_scroll()
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        if nav_down and total:
+            self.bookmark_menu_selection_idx = (self.bookmark_menu_selection_idx + 1) % total
+            self._update_bookmark_menu_scroll()
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        if cmd == 'select_menu_item':
+            if total:
+                entry = self.bookmarks[self.bookmark_menu_selection_idx]
+                self.show_bookmark_menu = False
+                await self._jump_to_bookmark(entry)
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        if cmd == 'toggle_bookmark_menu':
+            self.show_bookmark_menu = False
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        return False
+
+    def _update_bookmark_menu_scroll(self):
+        """Keep the bookmark selection visible, mirroring the chapter index."""
+        total = len(self.bookmarks)
+        _, height = ui.get_terminal_size()
+        max_visible = max(1, min(15, height - 6))
+        offset = self.bookmark_menu_scroll_offset
+        if offset > total - max_visible:
+            offset = max(0, total - max_visible)
+        if offset < 0:
+            offset = 0
+        sel = self.bookmark_menu_selection_idx
+        if sel < offset:
+            offset = sel
+        if sel >= offset + max_visible:
+            offset = max(0, sel - max_visible + 1)
+        self.bookmark_menu_scroll_offset = offset
+
+    async def _jump_to_bookmark(self, entry):
+        """Restore a saved reading position, mirroring the chapter jump."""
+        c, p, s = entry.get('c', 0), entry.get('p', 0), entry.get('s', 0)
+        if not (0 <= c < len(self.chapters)):
+            return
+        self.show_bookmark_menu = False
+        self.chapter_idx = self.ui_chapter_idx = c
+        self.paragraph_idx = self.ui_paragraph_idx = p
+        self.sentence_idx = self.ui_sentence_idx = s
+        self.first_sentence_jump = False
+        self.auto_scroll_enabled = False
+        self._scroll_to_position_immediate(c, p, s)
+        self._save_extended_progress(sync_audio_position=True)
+        if not self.is_paused and self.tts_model:
+            self.pending_restart_task = asyncio.create_task(self._restart_audio_after_navigation())
+        else:
+            await audio.stop_and_clear_audio(self)
+        asyncio.create_task(ui.display_ui(self))
 
     def _increase_speed(self):
         """Increase playback speed."""
@@ -1662,6 +1757,14 @@ class Lue:
                 await self._handle_toggle_voice_menu()
                 continue
 
+            if cmd == 'add_bookmark':
+                await self._handle_add_bookmark()
+                continue
+
+            if cmd == 'toggle_bookmark_menu':
+                await self._handle_toggle_bookmark_menu()
+                continue
+
             if self.show_chapter_index:
                 if cmd in ['prev_sentence', 'prev_paragraph', 'scroll_up', 'scroll_page_up', 'wheel_scroll_up', 'move_to_beginning']:
                     if self.chapter_index_selection_idx > 0:
@@ -1710,6 +1813,18 @@ class Lue:
 
             if self.show_voice_menu:
                 if await self._handle_voice_menu_command(cmd):
+                    continue
+                if cmd == 'quit':
+                    pass
+                elif cmd == '_resize':
+                    pass
+                elif isinstance(cmd, tuple):
+                    pass
+                else:
+                    continue
+
+            if self.show_bookmark_menu:
+                if await self._handle_bookmark_menu_command(cmd):
                     continue
                 if cmd == 'quit':
                     pass

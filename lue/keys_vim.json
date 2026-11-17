@@ -30,7 +30,9 @@
         "toggle_chapter_index": "c",
         "search": "/",
         "add_note": "N",
-        "toggle_voice_menu": "o"
+        "toggle_voice_menu": "o",
+        "add_bookmark": "d",
+        "toggle_bookmark_menu": "f"
     },
     "application": {
         "quit": "q",

@@ -39,14 +39,17 @@ def get_documents_dir() -> Path:
     return Path.home()
 
 
-def get_notes_path(book_title: str, documents_dir=None) -> Path:
-    """Build the Markdown notes file path for a book title."""
+def sanitize_book_title(book_title: str) -> str:
+    """Sanitize a book title for use as a file name."""
     safe = re.sub(r'[^\w\s()-]', '', book_title).strip()
     safe = re.sub(r'\s+', ' ', safe)
-    if not safe:
-        safe = "Libro"
+    return safe or "Libro"
+
+
+def get_notes_path(book_title: str, documents_dir=None) -> Path:
+    """Build the Markdown notes file path for a book title."""
     base = Path(documents_dir) if documents_dir else get_documents_dir()
-    return base / f"{safe}.md"
+    return base / f"{sanitize_book_title(book_title)}.md"
 
 
 def format_note_timestamp(now: datetime = None, time_format: str = None) -> str:
