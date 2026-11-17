@@ -84,12 +84,12 @@ def _process_escape_sequence(reader, seq):
     cmd = None
 
     if last_char == 'A':
-        cmd = 'scroll_up' if (reader.show_recent_menu or reader.show_chapter_index or reader.show_search) else 'prev_paragraph'
+        cmd = 'scroll_up' if (reader.show_recent_menu or reader.show_chapter_index or reader.show_search or reader.show_voice_menu) else 'prev_paragraph'
     elif last_char == 'B':
-        cmd = 'scroll_down' if (reader.show_recent_menu or reader.show_chapter_index or reader.show_search) else 'next_paragraph'
-    elif last_char == 'C' and not (reader.show_recent_menu or reader.show_chapter_index or reader.show_search):
+        cmd = 'scroll_down' if (reader.show_recent_menu or reader.show_chapter_index or reader.show_search or reader.show_voice_menu) else 'next_paragraph'
+    elif last_char == 'C' and not (reader.show_recent_menu or reader.show_chapter_index or reader.show_search or reader.show_voice_menu):
         cmd = 'next_sentence'
-    elif last_char == 'D' and not (reader.show_recent_menu or reader.show_chapter_index or reader.show_search):
+    elif last_char == 'D' and not (reader.show_recent_menu or reader.show_chapter_index or reader.show_search or reader.show_voice_menu):
         cmd = 'prev_sentence'
     elif seq == '\x1b[5~':
         cmd = 'scroll_page_up'
@@ -260,6 +260,8 @@ def _process_normal_key(reader, data):
         cmd = 'search'
     elif _matches_shortcut(data, display_shortcuts.get("add_note", "N")):
         cmd = 'add_note'
+    elif _matches_shortcut(data, display_shortcuts.get("toggle_voice_menu", "V")):
+        cmd = 'toggle_voice_menu'
 
     if cmd:
         reader.post_command(cmd)

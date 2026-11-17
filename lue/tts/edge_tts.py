@@ -6,6 +6,36 @@ from rich.console import Console
 from .base import TTSBase
 from .. import config
 
+def format_voice_label(voice):
+    """Human-friendly label for an edge-tts voice dict: 'Salome (Female)'."""
+    short_name = voice.get('ShortName', '')
+    identity = short_name.split('-')[-1]
+    if identity.endswith('Neural'):
+        identity = identity[:-len('Neural')]
+    gender = 'Female' if voice.get('Gender', '').lower() == 'female' else 'Male'
+    return f"{identity} ({gender})"
+
+
+def group_edge_voices(voices):
+    """Group edge-tts voices by language prefix: {'es': [(id, label), ...]}.
+
+    Entries are sorted by voice id so locales cluster together; the label
+    carries the locale so es-CO and es-ES voices are distinguishable.
+    """
+    catalog = {}
+    for voice in voices or []:
+        voice_id = voice.get('ShortName', '')
+        locale = voice.get('Locale', '')
+        if not voice_id or not locale:
+            continue
+        language = locale.split('-')[0].lower()
+        label = f"{format_voice_label(voice)} · {locale}"
+        catalog.setdefault(language, []).append((voice_id, label))
+    for entries in catalog.values():
+        entries.sort()
+    return catalog
+
+
 class EdgeTTS(TTSBase):
     """TTS implementation for Microsoft Edge's online TTS service."""
 
@@ -36,6 +66,21 @@ class EdgeTTS(TTSBase):
             self.console.print("[yellow]Please run 'pip install edge-tts' to use this TTS model.[/yellow]")
             logging.error("'edge-tts' is not installed.")
             return False
+
+    async def list_voices(self):
+        """Return available voices grouped by language, or {} when offline."""
+        if not self.initialized or self.edge_tts is None:
+            try:
+                import edge_tts
+                self.edge_tts = edge_tts
+            except ImportError:
+                return {}
+        try:
+            voices = await self.edge_tts.list_voices()
+        except Exception as e:
+            logging.warning(f"Edge TTS voice listing failed: {e}", exc_info=True)
+            return {}
+        return group_edge_voices(voices)
 
     async def get_raw_timing_data(self, text: str, output_path: str):
         """

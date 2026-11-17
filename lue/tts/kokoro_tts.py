@@ -14,6 +14,50 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 os.environ["HF_HUB_ETAG_TIMEOUT"] = "10"
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "10"
 
+# Kokoro voice ids ship a two-letter prefix: language + gender (f/m).
+_KOKORO_VOICE_IDS = [
+    "af_heart", "af_alloy", "af_aoede", "af_bella", "af_jessica", "af_kore",
+    "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael",
+    "am_onyx", "am_puck", "am_santa",
+    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+    "ef_dora", "em_alex", "em_santa",
+    "ff_siwis",
+    "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+    "if_sara", "im_nicola",
+    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro", "jm_kumo",
+    "pf_dora", "pm_alex", "pm_santa",
+    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+    "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
+]
+
+# Kokoro language prefix -> ISO language code (matches TTS_LANGUAGE_CODES semantics).
+_KOKORO_LANGUAGE_CODES = {
+    "a": "en",  # American English
+    "b": "en",  # British English
+    "e": "es",  # Spanish
+    "f": "fr",  # French
+    "h": "hi",  # Hindi
+    "i": "it",  # Italian
+    "j": "ja",  # Japanese
+    "p": "pt",  # Portuguese
+    "z": "zh",  # Chinese (Mandarin)
+}
+
+
+def kokoro_voice_catalog():
+    """Static voice catalog grouped by ISO language code."""
+    catalog = {}
+    for voice_id in _KOKORO_VOICE_IDS:
+        prefix, name = voice_id.split("_", 1)
+        language = _KOKORO_LANGUAGE_CODES.get(prefix[0], prefix[0])
+        gender_label = "Female" if prefix[1:] == "f" else "Male"
+        catalog.setdefault(language, []).append((voice_id, f"{name.capitalize()} ({gender_label})"))
+    for entries in catalog.values():
+        entries.sort()
+    return catalog
+
 
 class KokoroTTS(TTSBase):
     """TTS implementation for Kokoro TTS."""
@@ -37,6 +81,10 @@ class KokoroTTS(TTSBase):
 
         if self.lang is None:
             self.lang = config.TTS_LANGUAGE_CODES.get(self.name)
+
+    async def list_voices(self):
+        """Return the static Kokoro voice catalog grouped by language."""
+        return kokoro_voice_catalog()
 
     def _patch_hf_downloader(self):
         """Patches hf_hub_download to show download progress messages."""
@@ -185,7 +233,6 @@ class KokoroTTS(TTSBase):
             try:
                 # Generate audio with timing information
                 results = list(self.pipeline(text, voice=self.voice, split_pattern=None))
-
                 if results:
                     # Concatenate all audio segments
                     audio_segments = [result.audio for result in results]

@@ -326,6 +326,18 @@ class Lue:
         self.status_message = ''
         self.status_message_until = 0.0
         self.status_seconds = 2.5
+        # Voice picker menu state
+        self.show_voice_menu = False
+        self.voice_menu_level = 'language'
+        self.voice_menu_selection_idx = 0
+        self.voice_menu_scroll_offset = 0
+        self.voice_menu_languages = []
+        self.voice_menu_voices = []
+        self.voice_menu_language = None
+        self.voice_menu_loading = False
+        self.voice_menu_error = ''
+        self.voice_menu_was_playing = False
+        self._voice_menu_catalog = {}
         
         # Rendering state
         self.last_rendered_state = None
@@ -873,6 +885,111 @@ class Lue:
         audio.kill_audio_immediately(self)
         self.post_command(('click_jump', press_screen))
         asyncio.create_task(ui.display_ui(self))
+
+    def _update_voice_menu_scroll(self):
+        """Keep the voice menu selection visible, mirroring the chapter index."""
+        current = self.voice_menu_languages if self.voice_menu_level == 'language' else self.voice_menu_voices
+        total = len(current)
+        _, height = ui.get_terminal_size()
+        max_visible = max(1, min(15, height - 6))
+        offset = self.voice_menu_scroll_offset
+        if offset > total - max_visible:
+            offset = max(0, total - max_visible)
+        if offset < 0:
+            offset = 0
+        sel = self.voice_menu_selection_idx
+        if sel < offset:
+            offset = sel
+        if sel >= offset + max_visible:
+            offset = max(0, sel - max_visible + 1)
+        self.voice_menu_scroll_offset = offset
+
+    async def _handle_toggle_voice_menu(self):
+        """Open/close the voice picker; pause audio while it is open."""
+        self.show_voice_menu = not self.show_voice_menu
+        if self.show_voice_menu:
+            self.show_recent_menu = False
+            self.show_chapter_index = False
+            self.show_search = False
+            self.voice_menu_level = 'language'
+            self.voice_menu_selection_idx = 0
+            self._update_voice_menu_scroll()
+            self.voice_menu_was_playing = not self.is_paused
+            if not self.is_paused:
+                self.is_paused = True
+                self._save_extended_progress()
+                await audio.stop_and_clear_audio(self)
+            if self.tts_model is None:
+                self.voice_menu_error = 'TTS deshabilitado ( iniciá con --tts edge )'
+            elif not self.voice_menu_languages and not self.voice_menu_loading:
+                self.voice_menu_loading = True
+                self.voice_menu_error = ''
+                asyncio.create_task(self._load_voice_menu_data())
+        asyncio.create_task(ui.display_ui(self))
+
+    async def _load_voice_menu_data(self):
+        """Fetch the voice catalog from the active TTS engine."""
+        try:
+            grouped = await self.tts_model.list_voices()
+            if grouped:
+                self.voice_menu_languages = sorted(grouped)
+                self._voice_menu_catalog = grouped
+            else:
+                self.voice_menu_error = 'No hay voces disponibles'
+        except Exception as e:
+            logging.warning(f"Voice catalog load failed: {e}", exc_info=True)
+            self.voice_menu_error = 'Error cargando voces'
+        finally:
+            self.voice_menu_loading = False
+            asyncio.create_task(ui.display_ui(self))
+
+    async def _handle_voice_menu_command(self, cmd):
+        """Consume a command while the voice menu is open; False = not consumed."""
+        if not self.show_voice_menu:
+            return False
+        current = self.voice_menu_languages if self.voice_menu_level == 'language' else self.voice_menu_voices
+        total = len(current)
+        nav_up = cmd in ['prev_sentence', 'prev_paragraph', 'scroll_up', 'scroll_page_up', 'wheel_scroll_up', 'move_to_beginning']
+        nav_down = cmd in ['next_sentence', 'next_paragraph', 'scroll_down', 'scroll_page_down', 'wheel_scroll_down', 'move_to_end']
+        if nav_up and total:
+            self.voice_menu_selection_idx = (self.voice_menu_selection_idx - 1) % total
+            self._update_voice_menu_scroll()
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        if nav_down and total:
+            self.voice_menu_selection_idx = (self.voice_menu_selection_idx + 1) % total
+            self._update_voice_menu_scroll()
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        if cmd == 'select_menu_item':
+            if self.voice_menu_level == 'language' and total:
+                self.voice_menu_language = current[self.voice_menu_selection_idx]
+                self.voice_menu_voices = self._voice_menu_catalog.get(self.voice_menu_language, [])
+                self.voice_menu_level = 'voice'
+                self.voice_menu_selection_idx = 0
+                self._update_voice_menu_scroll()
+            elif self.voice_menu_level == 'voice' and total:
+                voice_id, _label = current[self.voice_menu_selection_idx]
+                self.show_voice_menu = False
+                await self._apply_voice_selection(voice_id)
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        if cmd == 'toggle_voice_menu':
+            self.show_voice_menu = False
+            asyncio.create_task(ui.display_ui(self))
+            return True
+        return False
+
+    async def _apply_voice_selection(self, voice_id):
+        """Swap the reading voice in place; resume reading if it was playing."""
+        model = self.tts_model
+        if model is None:
+            return
+        model.voice = voice_id
+        self._set_status(f'✓ Voz: {voice_id}')
+        if self.voice_menu_was_playing and self.is_paused:
+            self.is_paused = False
+            await self._restart_audio_after_navigation()
 
     def _increase_speed(self):
         """Increase playback speed."""
@@ -1541,6 +1658,10 @@ class Lue:
                 asyncio.create_task(ui.display_ui(self))
                 continue
 
+            if cmd == 'toggle_voice_menu':
+                await self._handle_toggle_voice_menu()
+                continue
+
             if self.show_chapter_index:
                 if cmd in ['prev_sentence', 'prev_paragraph', 'scroll_up', 'scroll_page_up', 'wheel_scroll_up', 'move_to_beginning']:
                     if self.chapter_index_selection_idx > 0:
@@ -1579,6 +1700,18 @@ class Lue:
                     asyncio.create_task(ui.display_ui(self))
                     continue
                 elif cmd == 'quit':
+                    pass
+                elif cmd == '_resize':
+                    pass
+                elif isinstance(cmd, tuple):
+                    pass
+                else:
+                    continue
+
+            if self.show_voice_menu:
+                if await self._handle_voice_menu_command(cmd):
+                    continue
+                if cmd == 'quit':
                     pass
                 elif cmd == '_resize':
                     pass

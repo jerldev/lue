@@ -8,7 +8,7 @@ DEFAULT_TTS_MODEL = "edge"
 
 # Default voices for TTS models
 TTS_VOICES = {
-    "edge": "en-US-JennyNeural",
+    "edge": "es-CO-SalomeNeural",
     "kokoro": "af_heart",
 }
 

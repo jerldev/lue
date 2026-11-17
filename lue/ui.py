@@ -844,6 +844,73 @@ def render_chapter_index_overlay(reader, width, height):
 
     return panel, min(60, width - 4), panel_height
 
+def render_voice_menu_overlay(reader, width, height):
+    """Render the voice picker overlay: language list or voice list."""
+    if reader.voice_menu_loading:
+        panel = Panel(
+            Text("Cargando voces…", style="cyan"),
+            title="[bold cyan]Voces[/bold cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
+            width=min(60, width - 4),
+            padding=(1, 2)
+        )
+        return panel, min(60, width - 4), 5
+
+    if reader.voice_menu_error:
+        panel = Panel(
+            Text(reader.voice_menu_error, style="bold red"),
+            title="[bold cyan]Voces[/bold cyan]",
+            border_style="cyan",
+            box=box.ROUNDED,
+            width=min(60, width - 4),
+            padding=(1, 2)
+        )
+        return panel, min(60, width - 4), 5
+
+    is_language_level = reader.voice_menu_level == 'language'
+    entries = reader.voice_menu_languages if is_language_level else reader.voice_menu_voices
+    total = len(entries)
+    sel = reader.voice_menu_selection_idx
+    scroll_offset = reader.voice_menu_scroll_offset
+    panel_height = min(total + 4, height - 4)
+    max_visible = max(1, panel_height - 4)
+
+    current_voice = getattr(getattr(reader, 'tts_model', None), 'voice', None)
+    subtitle = f"actual: {current_voice}" if current_voice else "↑/↓ · Enter · V cierra"
+
+    table = Table(box=None, show_header=False, padding=0, expand=True)
+    table.add_column("Selection", width=2)
+    table.add_column("Entry", ratio=1, no_wrap=True, overflow="ellipsis")
+
+    for i in range(scroll_offset, min(scroll_offset + max_visible, total)):
+        is_selected = i == sel
+        style = "reverse bold cyan" if is_selected else COLORS.TEXT_NORMAL
+        prefix = ">" if is_selected else " "
+
+        if is_language_level:
+            language = entries[i]
+            count = len(reader._voice_menu_catalog.get(language, []))
+            row_text = f"{language}  ({count} voces)"
+        else:
+            voice_id, label = entries[i]
+            marker = "*" if voice_id == current_voice else " "
+            row_text = f"{marker} {label}"
+
+        table.add_row(prefix, Text(row_text, overflow="ellipsis", no_wrap=True), style=style)
+
+    panel = Panel(
+        table,
+        title="[bold cyan]Voces[/bold cyan]",
+        subtitle=subtitle,
+        border_style="cyan",
+        box=box.ROUNDED,
+        width=min(60, width - 4),
+        height=panel_height,
+        padding=(1, 1)
+    )
+    return panel, min(60, width - 4), panel_height
+
 def render_search_overlay(reader, width, height):
     """Render the search overlay: query input or results navigation."""
     if reader.search_input_mode:
@@ -966,6 +1033,10 @@ async def display_ui(reader):
                 reader.search_input_mode,
                 # Add note input state to trigger updates
                 reader.note_input_mode, len(reader.note_buffer),
+                # Voice picker state
+                reader.show_voice_menu, reader.voice_menu_level,
+                reader.voice_menu_selection_idx, len(reader.voice_menu_voices),
+                reader.voice_menu_loading, reader.voice_menu_error,
                 # Transient status message (copy feedback, etc.)
                 reader.status_message if time.monotonic() < reader.status_message_until else '',
             )
@@ -1168,6 +1239,25 @@ async def display_ui(reader):
                 for i, line in enumerate(chapter_lines):
                     if i >= panel_height: break
                     overlay += f"\033[{start_y + i + 1};{start_x + 1}H{line}"
+
+                full_output += overlay
+
+            # Overlay voice picker if needed
+            if reader.show_voice_menu:
+                voice_panel, v_panel_width, v_panel_height = render_voice_menu_overlay(reader, width, height)
+                with temp_console.capture() as capture:
+                    temp_console.print(voice_panel, end='', overflow='crop')
+                voice_output = capture.get()
+
+                voice_lines = voice_output.split('\n')
+
+                v_start_y = (height - v_panel_height) // 2
+                v_start_x = (width - v_panel_width) // 2
+
+                overlay = ""
+                for i, line in enumerate(voice_lines):
+                    if i >= v_panel_height: break
+                    overlay += f"\033[{v_start_y + i + 1};{v_start_x + 1}H{line}"
 
                 full_output += overlay
 

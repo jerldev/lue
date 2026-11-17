@@ -149,6 +149,14 @@ class TTSBase(ABC):
         """
         return []
 
+    async def list_voices(self):
+        """
+        Return available voices grouped by language: {'es': [(id, label), ...]}.
+
+        Engines without a voice catalog return an empty dict.
+        """
+        return {}
+
     async def warm_up(self):
         """
         Warm up the model to reduce initial latency.
