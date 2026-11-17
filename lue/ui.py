@@ -3,6 +3,7 @@ import os
 import sys
 import platform
 import re
+import time
 from rich.console import Console, Group
 from rich.text import Text
 from rich.panel import Panel
@@ -964,7 +965,9 @@ async def display_ui(reader):
                 len(reader.search_matches), len(reader.search_query),
                 reader.search_input_mode,
                 # Add note input state to trigger updates
-                reader.note_input_mode, len(reader.note_buffer)
+                reader.note_input_mode, len(reader.note_buffer),
+                # Transient status message (copy feedback, etc.)
+                reader.status_message if time.monotonic() < reader.status_message_until else '',
             )
             
             if reader.last_rendered_state == current_state and reader.last_terminal_size == (width, height):
@@ -1205,6 +1208,12 @@ async def display_ui(reader):
                     overlay += f"\033[{n_start_y + i + 1};{n_start_x + 1}H{line}"
 
                 full_output += overlay
+
+            # Transient status message on the bottom row (copy feedback, etc.)
+            if reader.status_message and time.monotonic() < reader.status_message_until:
+                status_col = max(1, (width - len(reader.status_message)) // 2 + 1)
+                style_code = "1;32" if reader.status_message.startswith("✓") else "1;31"
+                full_output += f"\033[{height};{status_col}H\033[{style_code}m{reader.status_message}\033[0m"
 
             sys.stdout.write(full_output)
             sys.stdout.flush()

@@ -359,3 +359,15 @@ async def _player_loop(reader):
             try:
                 if process.returncode is None: process.terminate()
             except (ProcessLookupError, AttributeError): pass
+def kill_audio_immediately(reader):
+    """Kill audio playback immediately."""
+    for process in reader.playback_processes[:]:
+        try:
+            process.kill()
+        except (ProcessLookupError, AttributeError):
+            pass
+    try:
+        subprocess.run(['pkill', '-f', 'ffplay'], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass

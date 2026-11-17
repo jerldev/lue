@@ -5,6 +5,8 @@ import os
 import re
 import time
 
+from . import audio
+
 # Default keyboard shortcuts
 DEFAULT_KEYBOARD_SHORTCUTS = {
     "navigation": {
@@ -100,7 +102,7 @@ def _process_escape_sequence(reader, seq):
 
     if cmd:
         if cmd in ('prev_paragraph', 'next_paragraph', 'prev_sentence', 'next_sentence'):
-            _kill_audio_immediately(reader)
+            audio.kill_audio_immediately(reader)
         reader.post_command(cmd)
 
 
@@ -135,11 +137,11 @@ def _process_mouse_sequence(reader, sequence):
                         if not reader._is_click_on_text(x_pos, y_pos):
                             return
 
-                        if hasattr(reader, 'pending_restart_task') and reader.pending_restart_task and not reader.pending_restart_task.done():
-                            reader.pending_restart_task.cancel()
-
-                        _kill_audio_immediately(reader)
-                        reader.post_command(('click_jump', (x_pos, y_pos)))
+                        # Text-selection flow: defer jump/copy until mouse
+                        # release so a drag does not trigger a jump.
+                        if getattr(reader, 'note_input_mode', False) or getattr(reader, 'show_search', False):
+                            return
+                        reader.post_command(('selection_press', (x_pos, y_pos)))
                     elif button == 64:
                         if reader.auto_scroll_enabled:
                             reader.auto_scroll_enabled = False
@@ -148,6 +150,15 @@ def _process_mouse_sequence(reader, sequence):
                         if reader.auto_scroll_enabled:
                             reader.auto_scroll_enabled = False
                         reader.post_command('wheel_scroll_down')
+                    elif button & 32:
+                        # Drag motion (mode 1002): extend the pending selection.
+                        if getattr(reader, 'selection_press_screen', None) is not None:
+                            reader.post_command(('selection_move', (x_pos, y_pos)))
+                else:
+                    # SGR release event: the reader decides copy (drag) vs
+                    # legacy click jump.
+                    if button == 0:
+                        reader.post_command(('selection_release', (x_pos, y_pos)))
         except (ValueError, IndexError):
             pass
 
@@ -333,18 +344,4 @@ def process_input(reader):
                 reader.esc_start_time = None
             break
     except Exception:
-        pass
-
-
-def _kill_audio_immediately(reader):
-    """Kill audio playback immediately."""
-    for process in reader.playback_processes[:]:
-        try:
-            process.kill()
-        except (ProcessLookupError, AttributeError):
-            pass
-    try:
-        subprocess.run(['pkill', '-f', 'ffplay'], check=False, 
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except (subprocess.CalledProcessError, FileNotFoundError):
         pass

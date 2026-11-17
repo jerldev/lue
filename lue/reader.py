@@ -1,10 +1,12 @@
 import os
 import sys
 import asyncio
+import base64
 import re
 import signal
 import logging
 import subprocess
+import time
 from rich.console import Console
 from rich.text import Text
 import platformdirs
@@ -319,6 +321,11 @@ class Lue:
         self.selection_end_pos = None
         self.mouse_pressed = False
         self.mouse_press_pos = None
+        self.selection_press_screen = None
+        # Transient status message (copy feedback, etc.)
+        self.status_message = ''
+        self.status_message_until = 0.0
+        self.status_seconds = 2.5
         
         # Rendering state
         self.last_rendered_state = None
@@ -750,6 +757,122 @@ class Lue:
                 self._clear_selection()
             return success
         return False
+
+    def _clipboard_tool_candidates(self):
+        """Native clipboard helpers to try in order, most verifiable first."""
+        candidates = []
+        if os.environ.get('WAYLAND_DISPLAY'):
+            candidates.append(['wl-copy'])
+        if os.environ.get('DISPLAY'):
+            candidates.append(['xclip', '-selection', 'clipboard'])
+            candidates.append(['xsel', '--clipboard', '--input'])
+        candidates.append(['pbcopy'])
+        if os.environ.get('WSL_DISTRO_NAME'):
+            candidates.append(['clip.exe'])
+        return candidates
+
+    def _copy_via_osc52(self, text):
+        """Emit an OSC 52 clipboard write.
+
+        Fire-and-forget: honored by terminals and multiplexers that forward
+        the sequence (plain terminals, tmux, herdr, ssh), silently ignored
+        elsewhere.
+        """
+        try:
+            payload = base64.b64encode(text.encode('utf-8')).decode('ascii')
+            if not payload or len(payload) > 100000:
+                return False
+            sequence = f'\x1b]52;c;{payload}\x07'
+            if os.environ.get('TMUX'):
+                sequence = f'\x1bPtmux;\x1b{sequence}\x1b\\'
+            sys.stdout.write(sequence)
+            sys.stdout.flush()
+            return True
+        except (OSError, UnicodeError):
+            return False
+
+    def _copy_to_clipboard(self, text):
+        """Copy text to the system clipboard.
+
+        Native tools first (their exit code is verifiable); OSC 52 as the
+        fallback for multiplexers and remote sessions.
+        """
+        if not text:
+            return False
+        for argv in self._clipboard_tool_candidates():
+            try:
+                process = subprocess.Popen(
+                    argv, stdin=subprocess.PIPE, text=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                process.communicate(input=text, timeout=2)
+                if process.returncode == 0:
+                    return True
+            except (subprocess.TimeoutExpired, OSError):
+                continue
+        return self._copy_via_osc52(text)
+
+    def _set_status(self, message):
+        """Show a transient status message on the bottom row."""
+        self.status_message = message
+        self.status_message_until = time.monotonic() + self.status_seconds
+        asyncio.create_task(self._clear_status_after(self.status_seconds))
+
+    async def _clear_status_after(self, seconds):
+        """Trigger a re-render once the status message expires."""
+        await asyncio.sleep(seconds)
+        asyncio.create_task(ui.display_ui(self))
+
+    async def _handle_selection_press(self, screen_pos):
+        """Begin a potential drag selection; click behavior waits for release."""
+        self.selection_press_screen = screen_pos
+        self.selection_active = False
+        self.selection_start = None
+        self.selection_end = None
+
+    async def _handle_selection_move(self, screen_pos):
+        """Extend the in-progress selection while dragging."""
+        if self.selection_press_screen is None:
+            return
+        start = self._find_char_position_at_click(*self.selection_press_screen)
+        end = self._find_char_position_at_click(*screen_pos)
+        if start is None:
+            return
+        if end is None:
+            # Dragged past the last line: select through the end of the text.
+            last = len(self.document_lines) - 1
+            if last < 0:
+                return
+            end = (last, len(self.document_lines[last].plain))
+        self.selection_active = True
+        self.selection_start = start
+        self.selection_end = end
+        asyncio.create_task(ui.display_ui(self))
+
+    async def _handle_selection_release(self, screen_pos):
+        """Auto-copy on drag release; plain clicks keep the legacy jump."""
+        press_screen = self.selection_press_screen
+        self.selection_press_screen = None
+        dragged = (
+            self.selection_active
+            and self.selection_start is not None
+            and self.selection_end is not None
+            and self.selection_start != self.selection_end
+        )
+        if dragged:
+            copied = self._handle_copy_selection()
+            self._set_status('✓ Copiado al portapapeles' if copied else '✗ No se pudo copiar')
+            asyncio.create_task(ui.display_ui(self))
+            return
+        self.selection_active = False
+        if press_screen is None:
+            return
+        # Legacy click behavior (previously ran on mouse press).
+        if getattr(self, 'pending_restart_task', None) and not self.pending_restart_task.done():
+            self.pending_restart_task.cancel()
+        audio.kill_audio_immediately(self)
+        self.post_command(('click_jump', press_screen))
+        asyncio.create_task(ui.display_ui(self))
 
     def _increase_speed(self):
         """Increase playback speed."""
@@ -1665,6 +1788,12 @@ class Lue:
                             chapter_idx = self.chapter_index_scroll_offset + row
                             if 0 <= chapter_idx < len(self.chapters):
                                 await self._jump_to_chapter(chapter_idx)
+                elif command_name == 'selection_press':
+                    await self._handle_selection_press(data)
+                elif command_name == 'selection_move':
+                    await self._handle_selection_move(data)
+                elif command_name == 'selection_release':
+                    await self._handle_selection_release(data)
                 continue
             
             if cmd == 'quit': break
