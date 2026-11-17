@@ -260,7 +260,7 @@ def _process_normal_key(reader, data):
         cmd = 'search'
     elif _matches_shortcut(data, display_shortcuts.get("add_note", "N")):
         cmd = 'add_note'
-    elif _matches_shortcut(data, display_shortcuts.get("toggle_voice_menu", "V")):
+    elif _matches_shortcut(data, display_shortcuts.get("toggle_voice_menu", "o")):
         cmd = 'toggle_voice_menu'
 
     if cmd:

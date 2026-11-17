@@ -877,7 +877,7 @@ def render_voice_menu_overlay(reader, width, height):
     max_visible = max(1, panel_height - 4)
 
     current_voice = getattr(getattr(reader, 'tts_model', None), 'voice', None)
-    subtitle = f"actual: {current_voice}" if current_voice else "↑/↓ · Enter · V cierra"
+    subtitle = f"actual: {current_voice}" if current_voice else "↑/↓ · Enter · o cierra"
 
     table = Table(box=None, show_header=False, padding=0, expand=True)
     table.add_column("Selection", width=2)

@@ -99,7 +99,7 @@ class TestDefaultVoice:
         for path in ("lue/keys_default.json", "lue/keys_vim.json"):
             with open(path) as f:
                 shortcuts = json.load(f)
-            assert shortcuts["display_controls"]["toggle_voice_menu"] == "V"
+            assert shortcuts["display_controls"]["toggle_voice_menu"] == "o"
 
 
 class TestVoiceCatalog:
